@@ -34,7 +34,7 @@ public class RocketMQMessageListenerBeanPostProcessor implements BeanPostProcess
 
     private AnnotationEnhancer enhancer;
 
-    private final ObjectProvider<RocketMQMessageListenerContainerRegistrar> registrarObjectProvider;
+    protected final ObjectProvider<RocketMQMessageListenerContainerRegistrar> registrarObjectProvider;
 
     private boolean running = false;
 
@@ -97,7 +97,7 @@ public class RocketMQMessageListenerBeanPostProcessor implements BeanPostProcess
         return running;
     }
 
-    private RocketMQMessageListener enhance(AnnotatedElement element, RocketMQMessageListener ann) {
+    protected RocketMQMessageListener enhance(AnnotatedElement element, RocketMQMessageListener ann) {
         if (this.enhancer == null) {
             return ann;
         }

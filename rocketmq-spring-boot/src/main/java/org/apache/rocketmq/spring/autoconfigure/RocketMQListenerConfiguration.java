@@ -17,6 +17,7 @@
 package org.apache.rocketmq.spring.autoconfigure;
 
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListenerBeanPostProcessor;
+import org.apache.rocketmq.spring.annotation.RocketMQMultiTopicConsumerProcessor;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -33,6 +34,11 @@ public class RocketMQListenerConfiguration implements ImportBeanDefinitionRegist
         if (!registry.containsBeanDefinition(RocketMQMessageListenerBeanPostProcessor.class.getName())) {
             registry.registerBeanDefinition(RocketMQMessageListenerBeanPostProcessor.class.getName(),
                     new RootBeanDefinition(RocketMQMessageListenerBeanPostProcessor.class));
+        }
+
+        if (!registry.containsBeanDefinition(RocketMQMultiTopicConsumerProcessor.class.getName())) {
+            registry.registerBeanDefinition(RocketMQMultiTopicConsumerProcessor.class.getName(),
+                    new RootBeanDefinition(RocketMQMultiTopicConsumerProcessor.class));
         }
     }
 }

@@ -107,6 +107,55 @@ public class RocketMQMessageListenerContainerRegistrar implements ApplicationCon
         log.info("Register the listener to container, listenerBeanName:{}, containerBeanName:{}", beanName, containerBeanName);
     }
 
+    /**
+     * Register container for multi-topic consumer.
+     * This method supports setting multiple topics with their selectors.
+     */
+    public void registerMultiTopicContainer(String beanName, Object bean, RocketMQMessageListener annotation, List<TopicSelector> topicSelectors) {
+        Class<?> clazz = AopProxyUtils.ultimateTargetClass(bean);
+
+        if (RocketMQListener.class.isAssignableFrom(bean.getClass()) && RocketMQReplyListener.class.isAssignableFrom(bean.getClass())) {
+            throw new IllegalStateException(clazz + " cannot be both instance of " + RocketMQListener.class.getName() + " and " + RocketMQReplyListener.class.getName());
+        }
+
+        if (!RocketMQListener.class.isAssignableFrom(bean.getClass()) && !RocketMQReplyListener.class.isAssignableFrom(bean.getClass())) {
+            throw new IllegalStateException(clazz + " is not instance of " + RocketMQListener.class.getName() + " or " + RocketMQReplyListener.class.getName());
+        }
+
+        String consumerGroup = this.environment.resolvePlaceholders(annotation.consumerGroup());
+
+        // Validate each topic in topicSelectors
+        for (TopicSelector topicSelector : topicSelectors) {
+            String topic = this.environment.resolvePlaceholders(topicSelector.getTopic());
+            boolean listenerEnabled =
+                    (boolean) rocketMQProperties.getConsumer().getListeners().getOrDefault(consumerGroup, Collections.EMPTY_MAP)
+                            .getOrDefault(topic, true);
+
+            if (!listenerEnabled) {
+                log.debug(
+                        "Consumer Listener (group:{},topic:{}) is not enabled by configuration, will ignore initialization.",
+                        consumerGroup, topic);
+                return;
+            }
+        }
+
+        validate(annotation);
+
+        String containerBeanName = String.format("%s_%s", DefaultRocketMQListenerContainer.class.getName(),
+                counter.incrementAndGet());
+        GenericApplicationContext genericApplicationContext = (GenericApplicationContext) applicationContext;
+
+        genericApplicationContext.registerBean(containerBeanName, DefaultRocketMQListenerContainer.class,
+                () -> createMultiTopicRocketMQListenerContainer(containerBeanName, bean, annotation, topicSelectors));
+        DefaultRocketMQListenerContainer container = genericApplicationContext.getBean(containerBeanName,
+                DefaultRocketMQListenerContainer.class);
+
+        containers.add(container);
+
+        log.info("Register the multi-topic listener to container, listenerBeanName:{}, containerBeanName:{}, topics:{}",
+                beanName, containerBeanName, topicSelectors);
+    }
+
     public void startContainer() {
         for (DefaultRocketMQListenerContainer container : containers) {
             if (!container.isRunning()) {
@@ -133,11 +182,16 @@ public class RocketMQMessageListenerContainerRegistrar implements ApplicationCon
         if (StringUtils.hasLength(accessChannel)) {
             container.setAccessChannel(AccessChannel.valueOf(accessChannel));
         }
-        container.setTopic(environment.resolvePlaceholders(annotation.topic()));
-        String tags = environment.resolvePlaceholders(annotation.selectorExpression());
-        if (StringUtils.hasLength(tags)) {
-            container.setSelectorExpression(tags);
+
+        // Create TopicSelector for single topic annotation compatibility
+        String topicName = environment.resolvePlaceholders(annotation.topic());
+        String selectorExpression = environment.resolvePlaceholders(annotation.selectorExpression());
+        if (!StringUtils.hasLength(selectorExpression)) {
+            selectorExpression = "*"; // Default to all messages
         }
+        TopicSelector topicSelector = new TopicSelector(topicName, annotation.selectorType(), selectorExpression);
+        container.addTopicSelector(topicSelector);
+
         container.setConsumerGroup(environment.resolvePlaceholders(annotation.consumerGroup()));
         container.setTlsEnable(environment.resolvePlaceholders(annotation.tlsEnable()));
         if (RocketMQListener.class.isAssignableFrom(bean.getClass())) {
@@ -155,6 +209,52 @@ public class RocketMQMessageListenerContainerRegistrar implements ApplicationCon
         String namespaceV2 = environment.resolvePlaceholders(annotation.namespaceV2());
         container.setNamespaceV2(RocketMQUtil.getNamespace(namespaceV2,
             rocketMQProperties.getConsumer().getNamespaceV2()));
+        return container;
+    }
+
+    private DefaultRocketMQListenerContainer createMultiTopicRocketMQListenerContainer(String name, Object bean,
+                                                                                       RocketMQMessageListener annotation, List<TopicSelector> topicSelectors) {
+        DefaultRocketMQListenerContainer container = new DefaultRocketMQListenerContainer();
+
+        container.setRocketMQMessageListener(annotation);
+
+        String nameServer = environment.resolvePlaceholders(annotation.nameServer());
+        nameServer = StringUtils.hasLength(nameServer) ? nameServer : rocketMQProperties.getNameServer();
+        String accessChannel = environment.resolvePlaceholders(annotation.accessChannel());
+        container.setNameServer(nameServer);
+        if (StringUtils.hasLength(accessChannel)) {
+            container.setAccessChannel(AccessChannel.valueOf(accessChannel));
+        }
+
+        // Set multiple topics instead of single topic
+        List<TopicSelector> resolvedTopicSelectors = new ArrayList<>();
+        for (TopicSelector topicSelector : topicSelectors) {
+            String topic = environment.resolvePlaceholders(topicSelector.getTopic());
+            String selectorExpression = environment.resolvePlaceholders(topicSelector.getSelectorExpression());
+            if (!StringUtils.hasLength(selectorExpression)) {
+                selectorExpression = "*"; // Default to all messages
+            }
+            resolvedTopicSelectors.add(new TopicSelector(topic, topicSelector.getSelectorType(), selectorExpression));
+        }
+        container.setTopicSelectors(resolvedTopicSelectors);
+
+        container.setConsumerGroup(environment.resolvePlaceholders(annotation.consumerGroup()));
+        container.setTlsEnable(environment.resolvePlaceholders(annotation.tlsEnable()));
+        if (RocketMQListener.class.isAssignableFrom(bean.getClass())) {
+            container.setRocketMQListener((RocketMQListener) bean);
+        } else if (RocketMQReplyListener.class.isAssignableFrom(bean.getClass())) {
+            container.setRocketMQReplyListener((RocketMQReplyListener) bean);
+        }
+        container.setMessageConverter(rocketMQMessageConverter.getMessageConverter());
+        container.setName(name);
+
+        String namespace = environment.resolvePlaceholders(annotation.namespace());
+        container.setNamespace(RocketMQUtil.getNamespace(namespace,
+                rocketMQProperties.getConsumer().getNamespace()));
+
+        String namespaceV2 = environment.resolvePlaceholders(annotation.namespaceV2());
+        container.setNamespaceV2(RocketMQUtil.getNamespace(namespaceV2,
+                rocketMQProperties.getConsumer().getNamespaceV2()));
         return container;
     }
 

@@ -21,6 +21,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.apache.rocketmq.client.AccessChannel;
@@ -101,7 +102,10 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
 
     private String consumerGroup;
 
-    private String topic;
+    /**
+     * Multiple topics and selectors for multi-topic consumer support.
+     */
+    private List<TopicSelector> topicSelectors = new ArrayList<>();
 
     private int consumeThreadMax = 64;
 
@@ -127,8 +131,6 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
 
     // The following properties came from @RocketMQMessageListener.
     private ConsumeMode consumeMode;
-    private SelectorType selectorType;
-    private String selectorExpression;
     private MessageModel messageModel;
     private long consumeTimeout;
     private int maxReconsumeTimes;
@@ -178,14 +180,6 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
 
     public void setConsumerGroup(String consumerGroup) {
         this.consumerGroup = consumerGroup;
-    }
-
-    public String getTopic() {
-        return topic;
-    }
-
-    public void setTopic(String topic) {
-        this.topic = topic;
     }
 
     public int getConsumeThreadMax() {
@@ -240,8 +234,6 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
         this.consumeThreadMax = anno.consumeThreadMax();
         this.consumeThreadNumber = anno.consumeThreadNumber();
         this.messageModel = anno.messageModel();
-        this.selectorType = anno.selectorType();
-        this.selectorExpression = anno.selectorExpression();
         this.consumeTimeout = anno.consumeTimeout();
         this.maxReconsumeTimes = anno.maxReconsumeTimes();
         this.replyTimeout = anno.replyTimeout();
@@ -256,18 +248,6 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
 
     public ConsumeMode getConsumeMode() {
         return consumeMode;
-    }
-
-    public SelectorType getSelectorType() {
-        return selectorType;
-    }
-
-    public void setSelectorExpression(String selectorExpression) {
-        this.selectorExpression = selectorExpression;
-    }
-
-    public String getSelectorExpression() {
-        return selectorExpression;
     }
 
     public MessageModel getMessageModel() {
@@ -316,6 +296,18 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
 
     public void setInstanceName(String instanceName) {
         this.instanceName = instanceName;
+    }
+
+    public List<TopicSelector> getTopicSelectors() {
+        return topicSelectors;
+    }
+
+    public void setTopicSelectors(List<TopicSelector> topicSelectors) {
+        this.topicSelectors = topicSelectors;
+    }
+
+    public void addTopicSelector(TopicSelector topicSelector) {
+        this.topicSelectors.add(topicSelector);
     }
 
     public DefaultRocketMQListenerContainer setAwaitTerminationMillisWhenShutdown(long awaitTerminationMillisWhenShutdown) {
@@ -401,19 +393,19 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
 
     @Override
     public String toString() {
-        return "DefaultRocketMQListenerContainer{" +
-            "consumerGroup='" + consumerGroup + '\'' +
-            ", namespace='" + namespace + '\'' +
-            ", namespaceV2='" + namespaceV2 + '\'' +
-            ", nameServer='" + nameServer + '\'' +
-            ", topic='" + topic + '\'' +
-            ", consumeMode=" + consumeMode +
-            ", selectorType=" + selectorType +
-            ", selectorExpression='" + selectorExpression + '\'' +
-            ", messageModel=" + messageModel + '\'' +
-            ", tlsEnable=" + tlsEnable +
-            ", instanceName=" + instanceName +
-            '}';
+        StringBuilder sb = new StringBuilder("DefaultRocketMQListenerContainer{");
+        sb.append("consumerGroup='").append(consumerGroup).append('\'');
+        sb.append(", namespace='").append(namespace).append('\'');
+        sb.append(", namespaceV2='").append(namespaceV2).append('\'');
+        sb.append(", nameServer='").append(nameServer).append('\'');
+        sb.append(", topicSelectors=").append(topicSelectors);
+        sb.append(", consumeMode=").append(consumeMode);
+        sb.append(", messageModel=").append(messageModel);
+        sb.append(", tlsEnable=").append(tlsEnable);
+        sb.append(", instanceName=").append(instanceName);
+        sb.append('}');
+
+        return sb.toString();
     }
 
     public void setName(String name) {
@@ -627,7 +619,17 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
         }
         Assert.notNull(consumerGroup, "Property 'consumerGroup' is required");
         Assert.notNull(nameServer, "Property 'nameServer' is required");
-        Assert.notNull(topic, "Property 'topic' is required");
+
+        // Validate topic configuration
+        if (topicSelectors.isEmpty()) {
+            throw new IllegalArgumentException("Property 'topicSelectors' cannot be empty. At least one topic must be configured.");
+        }
+
+        // Validate each topic selector
+        for (TopicSelector topicSelector : topicSelectors) {
+            Assert.notNull(topicSelector.getTopic(), "TopicSelector topic cannot be null");
+            Assert.notNull(topicSelector.getSelectorType(), "TopicSelector selectorType cannot be null");
+        }
 
         RPCHook rpcHook = RocketMQUtil.getRPCHookByAkSk(applicationContext.getEnvironment(),
             this.rocketMQMessageListener.accessKey(), this.rocketMQMessageListener.secretKey());
@@ -673,17 +675,6 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
                 throw new IllegalArgumentException("Property 'messageModel' was wrong.");
         }
 
-        switch (selectorType) {
-            case TAG:
-                consumer.subscribe(topic, selectorExpression);
-                break;
-            case SQL92:
-                consumer.subscribe(topic, MessageSelector.bySql(selectorExpression));
-                break;
-            default:
-                throw new IllegalArgumentException("Property 'selectorType' was wrong.");
-        }
-
         switch (consumeMode) {
             case ORDERLY:
                 consumer.setMessageListener(new DefaultMessageListenerOrderly());
@@ -698,12 +689,44 @@ public class DefaultRocketMQListenerContainer implements InitializingBean,
         //if String is not is equal "true" TLS mode will represent the as default value false
         consumer.setUseTLS(new Boolean(tlsEnable));
 
+        // Subscribe to topics - support both single topic and multiple topics
+        subscribeToTopics();
+
         if (rocketMQListener instanceof RocketMQPushConsumerLifecycleListener) {
             ((RocketMQPushConsumerLifecycleListener) rocketMQListener).prepareStart(consumer);
         } else if (rocketMQReplyListener instanceof RocketMQPushConsumerLifecycleListener) {
             ((RocketMQPushConsumerLifecycleListener) rocketMQReplyListener).prepareStart(consumer);
         }
 
+    }
+
+    /**
+     * Subscribe to topics based on topicSelectors configuration.
+     */
+    private void subscribeToTopics() throws MQClientException {
+        if (topicSelectors.isEmpty()) {
+            throw new IllegalArgumentException("No topics configured. topicSelectors cannot be empty.");
+        }
+
+        // Subscribe to each topic with its selector
+        for (TopicSelector topicSelector : topicSelectors) {
+            String topicName = topicSelector.getTopic();
+            SelectorType selectorType = topicSelector.getSelectorType();
+            String selectorExpression = topicSelector.getSelectorExpression();
+
+            switch (selectorType) {
+                case TAG:
+                    consumer.subscribe(topicName, selectorExpression);
+                    log.info("Subscribed to topic: {} with TAG selector: {}", topicName, selectorExpression);
+                    break;
+                case SQL92:
+                    consumer.subscribe(topicName, MessageSelector.bySql(selectorExpression));
+                    log.info("Subscribed to topic: {} with SQL92 selector: {}", topicName, selectorExpression);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported selectorType: " + selectorType + " for topic: " + topicName);
+            }
+        }
     }
 
 }

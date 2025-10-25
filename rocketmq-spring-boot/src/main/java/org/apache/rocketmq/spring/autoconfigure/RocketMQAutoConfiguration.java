@@ -52,7 +52,7 @@ import org.springframework.util.StringUtils;
 @ConditionalOnClass({MQAdmin.class})
 @ConditionalOnProperty(prefix = "rocketmq", value = "name-server", matchIfMissing = true)
 @Import({MessageConverterConfiguration.class, ListenerContainerConfiguration.class, ExtProducerResetConfiguration.class,
-        ExtConsumerResetConfiguration.class, RocketMQTransactionConfiguration.class, RocketMQListenerConfiguration.class})
+        ExtConsumerResetConfiguration.class, RocketMQTransactionConfiguration.class, RocketMQListenerConfiguration.class,})
 @AutoConfigureAfter({MessageConverterConfiguration.class})
 @AutoConfigureBefore({RocketMQTransactionConfiguration.class})
 public class RocketMQAutoConfiguration implements ApplicationContextAware {
