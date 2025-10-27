@@ -17,6 +17,14 @@
 
 package org.apache.rocketmq.spring.annotation;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.apache.rocketmq.spring.core.RocketMQMultiTopicListener;
 import org.apache.rocketmq.spring.support.RocketMQMessageListenerContainerRegistrar;
 import org.apache.rocketmq.spring.support.TopicHandlerInfo;
@@ -27,10 +35,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.util.StringUtils;
 
-import java.lang.reflect.Method;
-import java.util.*;
-import java.util.List;
-
 /**
  * Bean post processor for multi-topic RocketMQ consumers.
  * Similar to RocketMQMessageListenerBeanPostProcessor but for multi-topic consumers.
@@ -39,11 +43,10 @@ import java.util.List;
 public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListenerBeanPostProcessor {
 
     public RocketMQMultiTopicConsumerProcessor(
-            List<AnnotationEnhancer> enhancers,
-            ObjectProvider<RocketMQMessageListenerContainerRegistrar> registrarProvider) {
+        List<AnnotationEnhancer> enhancers,
+        ObjectProvider<RocketMQMessageListenerContainerRegistrar> registrarProvider) {
         super(enhancers, registrarProvider);
     }
-
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
@@ -89,21 +92,21 @@ public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListener
                 if (!StringUtils.hasText(annotation.topic())) {
                     throw new IllegalArgumentException(
                         String.format("@RocketMQTopicHandler on method %s.%s must specify a topic",
-                                     clazz.getSimpleName(), method.getName()));
+                            clazz.getSimpleName(), method.getName()));
                 }
 
-                // Validate tags (only for TAG selector type)
-                if (annotation.selectorType() == SelectorType.TAG && !StringUtils.hasText(annotation.tags())) {
+                // Validate tags (only TAG selector type is supported)
+                if (!StringUtils.hasText(annotation.tags())) {
                     throw new IllegalArgumentException(
-                        String.format("@RocketMQTopicHandler on method %s.%s with TAG selector type must specify tags",
-                                     clazz.getSimpleName(), method.getName()));
+                        String.format("@RocketMQTopicHandler on method %s.%s must specify tags",
+                            clazz.getSimpleName(), method.getName()));
                 }
 
-                // Validate SQL expression (only for SQL92 selector type)
-                if (annotation.selectorType() == SelectorType.SQL92 && !StringUtils.hasText(annotation.sqlExpression())) {
+                // SQL92 selector type is not supported yet
+                if (annotation.selectorType() == SelectorType.SQL92) {
                     throw new IllegalArgumentException(
-                        String.format("@RocketMQTopicHandler on method %s.%s with SQL92 selector type must specify sqlExpression",
-                                     clazz.getSimpleName(), method.getName()));
+                        String.format("@RocketMQTopicHandler on method %s.%s: SQL92 selector type is not supported yet, only TAG mode is supported",
+                            clazz.getSimpleName(), method.getName()));
                 }
 
                 TopicHandlerInfo info = new TopicHandlerInfo(method, annotation);
@@ -123,7 +126,7 @@ public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListener
         if (handlers.isEmpty()) {
             throw new IllegalArgumentException(
                 String.format("Class %s annotated with @RocketMQMultiTopicConsumer must have at least one method annotated with @RocketMQTopicHandler",
-                             clazz.getSimpleName()));
+                    clazz.getSimpleName()));
         }
 
         return handlers;
@@ -131,26 +134,63 @@ public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListener
 
     /**
      * Convert TopicHandlerInfo map to TopicSelector list.
+     * Only supports TAG selector type.
+     * Splits tags by "||" and aggregates by topic, then rejoins tags with "||".
+     * Throws exception for duplicate topic+tag combinations.
      */
     private List<TopicSelector> convertToTopicSelectors(Map<String, TopicHandlerInfo> topicHandlers) {
-        List<TopicSelector> topicSelectors = new ArrayList<>();
+        Map<String, Set<String>> topicTagsMap = new LinkedHashMap<>(); // topic -> tags list
+        Map<String, String> uniqueTopicTags = new HashMap<>(); // topic+tag -> method name (for error reporting)
 
+        // 第一步：收集所有的 topic 和 tags，并检查重复
         for (TopicHandlerInfo handler : topicHandlers.values()) {
             RocketMQTopicHandler handlerAnnotation = handler.getAnnotation();
-            String selectorExpression;
+            String topic = handlerAnnotation.topic();
+            String tagsStr = handlerAnnotation.tags();
 
-            if (handlerAnnotation.selectorType() == SelectorType.TAG) {
-                selectorExpression = handlerAnnotation.tags();
-            } else if (handlerAnnotation.selectorType() == SelectorType.SQL92) {
-                selectorExpression = handlerAnnotation.sqlExpression();
+            // 按照 "||" 拆分 tags
+            String[] tagArray;
+            if ("*".equals(tagsStr)) {
+                tagArray = new String[]{"*"};
             } else {
-                selectorExpression = "*"; // Default
+                tagArray = tagsStr.split("\\|\\|");
             }
 
+            // 收集每个 tag 到对应的 topic
+            for (String tag : tagArray) {
+                String cleanTag = tag.trim();
+                String topicTagKey = topic + "#" + cleanTag;
+
+                // 检查是否已经存在相同的 topic+tag 组合
+                if (uniqueTopicTags.containsKey(topicTagKey)) {
+                    throw new IllegalArgumentException(
+                        String.format("Duplicate topic+tag subscription found: topic=%s, tag=%s. " +
+                            "Already handled by method: %s, conflicting method: %s",
+                            topic, cleanTag, uniqueTopicTags.get(topicTagKey), handler.getMethod().getName()));
+                }
+
+                // 记录这个 topic+tag 组合
+                uniqueTopicTags.put(topicTagKey, handler.getMethod().getName());
+
+                // 添加到 topic 的 tags 列表中
+                topicTagsMap.computeIfAbsent(topic, k -> new HashSet<>()).add(cleanTag);
+            }
+        }
+
+        // 第二步：按照 topic 聚合 tags，用 "||" 拼接
+        List<TopicSelector> topicSelectors = new ArrayList<>();
+        for (Map.Entry<String, Set<String>> entry : topicTagsMap.entrySet()) {
+            String topic = entry.getKey();
+            Set<String> tags = entry.getValue();
+
+            // 将同一个 topic 的所有 tags 用 "||" 拼接
+            String aggregatedTags = String.join("||", tags);
+
+            // 创建 TopicSelector
             TopicSelector topicSelector = new TopicSelector(
-                handlerAnnotation.topic(),
-                handlerAnnotation.selectorType(),
-                selectorExpression
+                topic,
+                SelectorType.TAG,
+                aggregatedTags
             );
 
             topicSelectors.add(topicSelector);

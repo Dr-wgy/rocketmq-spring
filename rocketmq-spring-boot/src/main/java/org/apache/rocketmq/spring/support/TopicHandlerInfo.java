@@ -17,8 +17,8 @@
 
 package org.apache.rocketmq.spring.support;
 
-import org.apache.rocketmq.spring.annotation.RocketMQTopicHandler;
 import java.lang.reflect.Method;
+import org.apache.rocketmq.spring.annotation.RocketMQTopicHandler;
 
 /**
  * Topic handler information holder.
@@ -41,11 +41,8 @@ public class TopicHandlerInfo {
     }
 
     private String generateHandlerKey(RocketMQTopicHandler annotation) {
-        if (annotation.selectorType() == org.apache.rocketmq.spring.annotation.SelectorType.SQL92) {
-            return annotation.topic() + "#SQL:" + annotation.sqlExpression();
-        } else {
-            return annotation.topic() + "#TAG:" + annotation.tags();
-        }
+        // Only TAG mode is supported
+        return annotation.topic() + "#TAG:" + annotation.tags();
     }
 
     public Method getMethod() {
@@ -79,9 +76,9 @@ public class TopicHandlerInfo {
     @Override
     public String toString() {
         return "TopicHandlerInfo{" +
-                "topic='" + annotation.topic() + '\'' +
-                ", tags='" + annotation.tags() + '\'' +
-                ", method='" + method.getName() + '\'' +
-                '}';
+            "topic='" + annotation.topic() + '\'' +
+            ", tags='" + annotation.tags() + '\'' +
+            ", method='" + method.getName() + '\'' +
+            '}';
     }
 }

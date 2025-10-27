@@ -60,9 +60,9 @@ public class TopicSelector {
     @Override
     public String toString() {
         return "TopicSelector{" +
-                "topic='" + topic + '\'' +
-                ", selectorType=" + selectorType +
-                ", selectorExpression='" + selectorExpression + '\'' +
-                '}';
+            "topic='" + topic + '\'' +
+            ", selectorType=" + selectorType +
+            ", selectorExpression='" + selectorExpression + '\'' +
+            '}';
     }
 }

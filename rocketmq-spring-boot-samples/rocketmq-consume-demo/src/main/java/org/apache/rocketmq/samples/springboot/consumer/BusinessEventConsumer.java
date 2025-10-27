@@ -22,7 +22,6 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.ConsumeMode;
 import org.apache.rocketmq.spring.annotation.RocketMQMultiTopicConsumer;
 import org.apache.rocketmq.spring.annotation.RocketMQTopicHandler;
-import org.apache.rocketmq.spring.annotation.SelectorType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -32,16 +31,13 @@ import org.springframework.stereotype.Service;
  * in a single consumer group.
  */
 @Service
-@RocketMQMultiTopicConsumer(
+@RocketMQMultiTopicConsumer (
     consumerGroup = "business-event-consumer-group",
-    consumeMode = ConsumeMode.CONCURRENTLY,
-    consumeThreadMax = 32,
-    consumeThreadNumber = 16
+    consumeMode = ConsumeMode.CONCURRENTLY
 )
 public class BusinessEventConsumer {
 
     private static final Logger logger = LoggerFactory.getLogger(BusinessEventConsumer.class);
-
     /**
      * Handle user creation and update events
      */
@@ -89,27 +85,6 @@ public class BusinessEventConsumer {
         OrderEvent orderEvent = JSON.parseObject(message, OrderEvent.class);
         processOrder(orderEvent);
     }
-
-    /**
-     * Handle payment events using SQL92 filter
-     */
-    @RocketMQTopicHandler(
-        topic = "payment-events",
-        selectorType = SelectorType.SQL92,
-        sqlExpression = "status IN ('SUCCESS', 'FAILED') AND amount > 100"
-    )
-    public void handlePaymentEvents(PaymentEvent event, MessageExt messageExt) {
-        String status = messageExt.getUserProperty("status");
-        logger.info("Processing payment event: orderId={}, status={}, amount={}",
-                   event.getOrderId(), status, event.getAmount());
-
-        if ("SUCCESS".equals(status)) {
-            handlePaymentSuccess(event);
-        } else if ("FAILED".equals(status)) {
-            handlePaymentFailed(event);
-        }
-    }
-
     /**
      * Handle VIP user events with specific tags
      */

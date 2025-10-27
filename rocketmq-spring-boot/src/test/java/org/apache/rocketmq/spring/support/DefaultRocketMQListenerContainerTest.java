@@ -19,7 +19,9 @@ package org.apache.rocketmq.spring.support;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
-
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
@@ -41,10 +43,6 @@ import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.converter.StringMessageConverter;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,7 +62,7 @@ public class DefaultRocketMQListenerContainerTest {
             public void onMessage(String message) {
             }
         });
-        Class result = (Class) getMessageType.invoke(listenerContainer);
+        Class result = (Class)getMessageType.invoke(listenerContainer);
         assertThat(result.getName().equals(String.class.getName()));
 
         //support message
@@ -73,7 +71,7 @@ public class DefaultRocketMQListenerContainerTest {
             public void onMessage(Message message) {
             }
         });
-        result = (Class) getMessageType.invoke(listenerContainer);
+        result = (Class)getMessageType.invoke(listenerContainer);
         assertThat(result.getName().equals(Message.class.getName()));
 
         listenerContainer.setRocketMQListener(new RocketMQListener<MessageExt>() {
@@ -81,9 +79,8 @@ public class DefaultRocketMQListenerContainerTest {
             public void onMessage(MessageExt message) {
             }
         });
-        result = (Class) getMessageType.invoke(listenerContainer);
+        result = (Class)getMessageType.invoke(listenerContainer);
         assertThat(result.getName().equals(MessageExt.class.getName()));
-
 
         listenerContainer.setRocketMQReplyListener(new RocketMQReplyListener<MessageExt, String>() {
             @Override
@@ -91,7 +88,7 @@ public class DefaultRocketMQListenerContainerTest {
                 return "test";
             }
         });
-        result = (Class) getMessageType.invoke(listenerContainer);
+        result = (Class)getMessageType.invoke(listenerContainer);
         assertThat(result.getName().equals(MessageExt.class.getName()));
 
         listenerContainer.setRocketMQReplyListener(new RocketMQReplyListener<String, String>() {
@@ -100,7 +97,7 @@ public class DefaultRocketMQListenerContainerTest {
                 return "test";
             }
         });
-        result = (Class) getMessageType.invoke(listenerContainer);
+        result = (Class)getMessageType.invoke(listenerContainer);
         assertThat(result.getName().equals(String.class.getName()));
     }
 
@@ -121,7 +118,7 @@ public class DefaultRocketMQListenerContainerTest {
         messageType.set(listenerContainer, String.class);
         MessageExt messageExt = new MessageExt(0, System.currentTimeMillis(), null, System.currentTimeMillis(), null, null);
         messageExt.setBody("hello".getBytes());
-        String result = (String) doConvertMessage.invoke(listenerContainer, messageExt);
+        String result = (String)doConvertMessage.invoke(listenerContainer, messageExt);
         assertThat(result).isEqualTo("hello");
 
         listenerContainer.setRocketMQListener(new RocketMQListener<MessageExt>() {
@@ -134,7 +131,7 @@ public class DefaultRocketMQListenerContainerTest {
         messageType2.set(listenerContainer, MessageExt.class);
         messageExt = new MessageExt(0, System.currentTimeMillis(), null, System.currentTimeMillis(), null, null);
         messageExt.setBody("hello".getBytes());
-        MessageExt result2 = (MessageExt) doConvertMessage.invoke(listenerContainer, messageExt);
+        MessageExt result2 = (MessageExt)doConvertMessage.invoke(listenerContainer, messageExt);
         assertThat(result2).isEqualTo(messageExt);
 
         //support message
@@ -148,7 +145,7 @@ public class DefaultRocketMQListenerContainerTest {
         messageType3.set(listenerContainer, Message.class);
         Message message = new MessageExt(0, System.currentTimeMillis(), null, System.currentTimeMillis(), null, null);
         message.setBody("hello".getBytes());
-        Message result3 = (Message) doConvertMessage.invoke(listenerContainer, message);
+        Message result3 = (Message)doConvertMessage.invoke(listenerContainer, message);
         assertThat(result3).isEqualTo(message);
 
         listenerContainer.setRocketMQListener(new RocketMQListener<User>() {
@@ -180,9 +177,9 @@ public class DefaultRocketMQListenerContainerTest {
             }
         });
 
-        ParameterizedType type = (ParameterizedType) getMessageType.invoke(listenerContainer);
+        ParameterizedType type = (ParameterizedType)getMessageType.invoke(listenerContainer);
         assertThat(type.getRawType() == ArrayList.class);
-        MethodParameter methodParameter = ((MethodParameter) getMethodParameter.invoke(listenerContainer));
+        MethodParameter methodParameter = ((MethodParameter)getMethodParameter.invoke(listenerContainer));
         assertThat(methodParameter.getParameterType() == ArrayList.class);
 
         listenerContainer.setRocketMQReplyListener(new RocketMQReplyListener<ArrayList<Date>, String>() {
@@ -192,9 +189,9 @@ public class DefaultRocketMQListenerContainerTest {
             }
         });
 
-        type = (ParameterizedType) getMessageType.invoke(listenerContainer);
+        type = (ParameterizedType)getMessageType.invoke(listenerContainer);
         assertThat(type.getRawType() == ArrayList.class);
-        methodParameter = ((MethodParameter) getMethodParameter.invoke(listenerContainer));
+        methodParameter = ((MethodParameter)getMethodParameter.invoke(listenerContainer));
         assertThat(methodParameter.getParameterType() == ArrayList.class);
     }
 
@@ -247,8 +244,6 @@ public class DefaultRocketMQListenerContainerTest {
         assertEquals(anno.consumeThreadMax(), container.getConsumeThreadMax());
         assertEquals(anno.consumeThreadNumber(), container.getConsumeThreadNumber());
         assertEquals(anno.messageModel(), container.getMessageModel());
-        assertEquals(anno.selectorType(), container.getSelectorType());
-        assertEquals(anno.selectorExpression(), container.getSelectorExpression());
         assertEquals(anno.tlsEnable(), container.getTlsEnable());
         assertEquals(anno.namespace(), container.getNamespace());
         assertEquals(anno.namespaceV2(), container.getNamespaceV2());
@@ -258,17 +253,17 @@ public class DefaultRocketMQListenerContainerTest {
     }
 
     @RocketMQMessageListener(consumerGroup = "abc1", topic = "test",
-            consumeMode = ConsumeMode.ORDERLY,
-            consumeThreadNumber = 3456,
-            messageModel = MessageModel.BROADCASTING,
-            selectorType = SelectorType.SQL92,
-            selectorExpression = "selectorExpression",
-            tlsEnable = "tlsEnable",
-            namespace = "namespace",
-            namespaceV2 = "namespaceV2",
-            delayLevelWhenNextConsume = 1234,
-            suspendCurrentQueueTimeMillis = 2345,
-            instanceName = "instanceName"
+        consumeMode = ConsumeMode.ORDERLY,
+        consumeThreadNumber = 3456,
+        messageModel = MessageModel.BROADCASTING,
+        selectorType = SelectorType.SQL92,
+        selectorExpression = "selectorExpression",
+        tlsEnable = "tlsEnable",
+        namespace = "namespace",
+        namespaceV2 = "namespaceV2",
+        delayLevelWhenNextConsume = 1234,
+        suspendCurrentQueueTimeMillis = 2345,
+        instanceName = "instanceName"
     )
     class TestRocketMQMessageListener {
     }

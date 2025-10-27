@@ -121,7 +121,7 @@ public @interface RocketMQMultiTopicConsumer {
 
     /**
      * Message consume retry strategy in concurrently mode.
-     *
+     * <p>
      * -1,no retry,put into DLQ directly
      * 0,broker control retry frequency
      * >0,client control retry frequency
@@ -130,7 +130,7 @@ public @interface RocketMQMultiTopicConsumer {
 
     /**
      * The interval of suspending the pull in orderly mode, in milliseconds.
-     *
+     * <p>
      * The minimum value is 10 and the maximum is 30000.
      */
     int suspendCurrentQueueTimeMillis() default 1000;

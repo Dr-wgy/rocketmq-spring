@@ -18,19 +18,17 @@
 package org.apache.rocketmq.spring.core;
 
 import com.alibaba.fastjson.JSON;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.spring.annotation.RocketMQTopicHandler;
-import org.apache.rocketmq.spring.annotation.SelectorType;
-import org.apache.rocketmq.spring.support.TopicHandlerInfo;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.aop.framework.AopProxyUtils;
-
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.spring.annotation.RocketMQTopicHandler;
+import org.apache.rocketmq.spring.support.TopicHandlerInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.aop.framework.AopProxyUtils;
 
 /**
  * Multi-topic RocketMQ listener that adapts multi-topic consumers to regular RocketMQListener interface.
@@ -56,19 +54,21 @@ public class RocketMQMultiTopicListener implements RocketMQListener<MessageExt> 
             String tags = messageExt.getTags();
 
             log.debug("Processing multi-topic message: topic={}, tags={}, msgId={}",
-                     realTopic, tags, messageExt.getMsgId());
+                realTopic, tags, messageExt.getMsgId());
 
             TopicHandlerInfo handler = findHandler(realTopic, tags, messageExt);
 
             if (handler != null) {
                 invokeHandler(handler, messageExt);
                 log.debug("Message processed successfully: msgId={}", messageExt.getMsgId());
-            } else {
+            }
+            else {
                 log.warn("No handler found for message: topic={}, tags={}, msgId={}",
-                        realTopic, tags, messageExt.getMsgId());
+                    realTopic, tags, messageExt.getMsgId());
             }
 
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             log.error("Failed to process multi-topic message: msgId={}", messageExt.getMsgId(), e);
             throw new RuntimeException("Message processing failed", e);
         }
@@ -115,51 +115,52 @@ public class RocketMQMultiTopicListener implements RocketMQListener<MessageExt> 
     }
 
     private TopicHandlerInfo findHandler(String topic, String tags, MessageExt messageExt) {
-        // 1. Try exact TAG match
-        String tagKey = topic + "#TAG:" + tags;
-        TopicHandlerInfo handler = handlerMap.get(tagKey);
-        if (handler != null) {
-            log.debug("Found exact tag handler: {}", tagKey);
-            return handler;
-        }
+        // 遍历所有handlers，找到匹配的
+        for (TopicHandlerInfo handler : handlerMap.values()) {
+            if (!handler.getTopic().equals(topic)) {
+                continue; // topic不匹配，跳过
+            }
 
-        // 2. Try wildcard TAG match
-        String wildcardKey = topic + "#TAG:*";
-        handler = handlerMap.get(wildcardKey);
-        if (handler != null) {
-            log.debug("Found wildcard tag handler: {}", wildcardKey);
-            return handler;
-        }
+            String handlerTags = handler.getTags();
 
-        // 3. Try SQL92 handlers for this topic
-        for (Map.Entry<String, TopicHandlerInfo> entry : handlerMap.entrySet()) {
-            String key = entry.getKey();
-            if (key.startsWith(topic + "#SQL:")) {
-                TopicHandlerInfo sqlHandler = entry.getValue();
-                if (matchesSqlExpression(sqlHandler.getSqlExpression(), messageExt)) {
-                    log.debug("Found SQL handler: {}", key);
-                    return sqlHandler;
-                }
+            // 1. 通配符匹配 "*"
+            if ("*".equals(handlerTags)) {
+                log.debug("Found wildcard handler for topic: {}", topic);
+                return handler;
+            }
+
+            // 2. 精确匹配或OR逻辑匹配
+            if (isTagMatched(tags, handlerTags)) {
+                log.debug("Found matching handler: topic={}, messageTags={}, handlerTags={}",
+                    topic, tags, handlerTags);
+                return handler;
             }
         }
 
+        log.debug("No handler found for topic={}, tags={}", topic, tags);
         return null;
     }
 
-    private boolean matchesSqlExpression(String sqlExpression, MessageExt messageExt) {
-        // Simple implementation - in production, you might want to use RocketMQ's SQL parser
-        try {
-            if (sqlExpression.contains("status")) {
-                String status = messageExt.getUserProperty("status");
-                if (status != null) {
-                    return sqlExpression.toLowerCase().contains(status.toLowerCase());
-                }
-            }
-            return true; // Default to true for this example
-        } catch (Exception e) {
-            log.warn("Failed to evaluate SQL expression: {}", sqlExpression, e);
+    /**
+     * 检查消息的tag是否匹配handler的tags配置
+     * @param messageTag 消息的tag
+     * @param handlerTags handler配置的tags，可能包含 "||" OR逻辑
+     * @return 是否匹配
+     */
+    private boolean isTagMatched(String messageTag, String handlerTags) {
+        if (messageTag == null || handlerTags == null) {
             return false;
         }
+
+        // 支持 "CREATE||UPDATE||DELETE" 这种OR逻辑
+        String[] tagArray = handlerTags.split("\\|\\|");
+        for (String tag : tagArray) {
+            if (messageTag.equals(tag.trim())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void invokeHandler(TopicHandlerInfo handler, MessageExt messageExt) throws Exception {
@@ -172,18 +173,22 @@ public class RocketMQMultiTopicListener implements RocketMQListener<MessageExt> 
 
             if (MessageExt.class.isAssignableFrom(paramType)) {
                 args[i] = messageExt;
-            } else if (String.class.equals(paramType)) {
+            }
+            else if (String.class.equals(paramType)) {
                 args[i] = new String(messageExt.getBody(), StandardCharsets.UTF_8);
-            } else if (byte[].class.equals(paramType)) {
+            }
+            else if (byte[].class.equals(paramType)) {
                 args[i] = messageExt.getBody();
-            } else {
+            }
+            else {
                 // Try to deserialize as JSON
                 String json = new String(messageExt.getBody(), StandardCharsets.UTF_8);
                 try {
                     args[i] = JSON.parseObject(json, paramType);
-                } catch (Exception e) {
+                }
+                catch (Exception e) {
                     log.warn("Failed to deserialize message body to {}: {}",
-                            paramType.getSimpleName(), e.getMessage());
+                        paramType.getSimpleName(), e.getMessage());
                     args[i] = null;
                 }
             }
