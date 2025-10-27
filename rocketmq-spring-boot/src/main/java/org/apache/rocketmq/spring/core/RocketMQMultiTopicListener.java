@@ -115,21 +115,21 @@ public class RocketMQMultiTopicListener implements RocketMQListener<MessageExt> 
     }
 
     private TopicHandlerInfo findHandler(String topic, String tags, MessageExt messageExt) {
-        // 遍历所有handlers，找到匹配的
+        // Iterate through all handlers to find a match
         for (TopicHandlerInfo handler : handlerMap.values()) {
             if (!handler.getTopic().equals(topic)) {
-                continue; // topic不匹配，跳过
+                continue; // topic doesn't match, skip
             }
 
             String handlerTags = handler.getTags();
 
-            // 1. 通配符匹配 "*"
+            // 1. Wildcard match "*"
             if ("*".equals(handlerTags)) {
                 log.debug("Found wildcard handler for topic: {}", topic);
                 return handler;
             }
 
-            // 2. 精确匹配或OR逻辑匹配
+            // 2. Exact match or OR logic match
             if (isTagMatched(tags, handlerTags)) {
                 log.debug("Found matching handler: topic={}, messageTags={}, handlerTags={}",
                     topic, tags, handlerTags);
@@ -142,17 +142,17 @@ public class RocketMQMultiTopicListener implements RocketMQListener<MessageExt> 
     }
 
     /**
-     * 检查消息的tag是否匹配handler的tags配置
-     * @param messageTag 消息的tag
-     * @param handlerTags handler配置的tags，可能包含 "||" OR逻辑
-     * @return 是否匹配
+     * Check if the message tag matches the handler's tags configuration
+     * @param messageTag the tag of the message
+     * @param handlerTags the tags configured for the handler, may contain "||" OR logic
+     * @return whether it matches
      */
     private boolean isTagMatched(String messageTag, String handlerTags) {
         if (messageTag == null || handlerTags == null) {
             return false;
         }
 
-        // 支持 "CREATE||UPDATE||DELETE" 这种OR逻辑
+        // Support OR logic like "CREATE||UPDATE||DELETE"
         String[] tagArray = handlerTags.split("\\|\\|");
         for (String tag : tagArray) {
             if (messageTag.equals(tag.trim())) {

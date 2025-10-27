@@ -142,13 +142,13 @@ public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListener
         Map<String, Set<String>> topicTagsMap = new LinkedHashMap<>(); // topic -> tags list
         Map<String, String> uniqueTopicTags = new HashMap<>(); // topic+tag -> method name (for error reporting)
 
-        // 第一步：收集所有的 topic 和 tags，并检查重复
+        // Step 1: Collect all topics and tags, and check for duplicates
         for (TopicHandlerInfo handler : topicHandlers.values()) {
             RocketMQTopicHandler handlerAnnotation = handler.getAnnotation();
             String topic = handlerAnnotation.topic();
             String tagsStr = handlerAnnotation.tags();
 
-            // 按照 "||" 拆分 tags
+            // Split tags by "||" delimiter
             String[] tagArray;
             if ("*".equals(tagsStr)) {
                 tagArray = new String[]{"*"};
@@ -156,12 +156,12 @@ public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListener
                 tagArray = tagsStr.split("\\|\\|");
             }
 
-            // 收集每个 tag 到对应的 topic
+            // Collect each tag to corresponding topic
             for (String tag : tagArray) {
                 String cleanTag = tag.trim();
                 String topicTagKey = topic + "#" + cleanTag;
 
-                // 检查是否已经存在相同的 topic+tag 组合
+                // Check if the same topic+tag combination already exists
                 if (uniqueTopicTags.containsKey(topicTagKey)) {
                     throw new IllegalArgumentException(
                         String.format("Duplicate topic+tag subscription found: topic=%s, tag=%s. " +
@@ -169,24 +169,24 @@ public class RocketMQMultiTopicConsumerProcessor extends RocketMQMessageListener
                             topic, cleanTag, uniqueTopicTags.get(topicTagKey), handler.getMethod().getName()));
                 }
 
-                // 记录这个 topic+tag 组合
+                // Record this topic+tag combination
                 uniqueTopicTags.put(topicTagKey, handler.getMethod().getName());
 
-                // 添加到 topic 的 tags 列表中
+                // Add to the tags list of the topic
                 topicTagsMap.computeIfAbsent(topic, k -> new HashSet<>()).add(cleanTag);
             }
         }
 
-        // 第二步：按照 topic 聚合 tags，用 "||" 拼接
+        // Step 2: Aggregate tags by topic and join with "||" delimiter
         List<TopicSelector> topicSelectors = new ArrayList<>();
         for (Map.Entry<String, Set<String>> entry : topicTagsMap.entrySet()) {
             String topic = entry.getKey();
             Set<String> tags = entry.getValue();
 
-            // 将同一个 topic 的所有 tags 用 "||" 拼接
+            // Join all tags of the same topic with "||" delimiter
             String aggregatedTags = String.join("||", tags);
 
-            // 创建 TopicSelector
+            // Create TopicSelector
             TopicSelector topicSelector = new TopicSelector(
                 topic,
                 SelectorType.TAG,
